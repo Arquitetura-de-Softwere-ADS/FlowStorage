@@ -1,7 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/app-layout";
-import { reportsService } from "@/services/reports.service";
+import { inventoryService } from "@/services/inventory.service";
+import type { Product } from "@/services/inventory.service";
+import { salesService } from "@/services/sales.service";
+import type { Sale } from "@/services/sales.service";
+import { ordersService } from "@/services/orders.service";
+import type { RestockOrder } from "@/services/orders.service";
 import { Link } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 
@@ -11,17 +16,54 @@ export const Route = createFileRoute("/app/")({
 
 function Dashboard() {
   const [data, setData] = useState<{
-    inv: ReturnType<typeof reportsService.inventorySummary>;
-    sales: ReturnType<typeof reportsService.salesSummary>;
-    orders: ReturnType<typeof reportsService.ordersSummary>;
+    inv: { totalProducts: number; totalUnits: number; totalValue: number; lowStock: Product[] };
+    sales: {
+      totalSales: number;
+      revenue: number;
+      topProducts: { name: string; qty: number; revenue: number }[];
+    };
+    orders: { total: number; pending: number; received: number };
   } | null>(null);
 
   useEffect(() => {
-    setData({
-      inv: reportsService.inventorySummary(),
-      sales: reportsService.salesSummary(),
-      orders: reportsService.ordersSummary(),
-    });
+    let mounted = true;
+    (async () => {
+      const products = await inventoryService.list();
+      const inv = {
+        totalProducts: products.length,
+        totalUnits: products.reduce((s: number, p: Product) => s + p.stock, 0),
+        totalValue: products.reduce((s: number, p: Product) => s + p.price * p.stock, 0),
+        lowStock: products.filter((p: Product) => p.stock <= p.minStock),
+      };
+
+      const sales = salesService.list();
+      const revenue = sales.reduce((s: number, x: Sale) => s + x.total, 0);
+      const byProduct = new Map<string, { name: string; qty: number; revenue: number }>();
+      for (const s of sales) {
+        const cur = byProduct.get(s.productId) ?? { name: s.productName, qty: 0, revenue: 0 };
+        cur.qty += s.quantity;
+        cur.revenue += s.total;
+        byProduct.set(s.productId, cur);
+      }
+      const salesSummary = {
+        totalSales: sales.length,
+        revenue,
+        topProducts: [...byProduct.values()].sort((a, b) => b.revenue - a.revenue).slice(0, 5),
+      };
+
+      const orders = ordersService.list();
+      const ordersSummary = {
+        total: orders.length,
+        pending: orders.filter((o: RestockOrder) => o.status === "pending").length,
+        received: orders.filter((o: RestockOrder) => o.status === "received").length,
+      };
+
+      if (!mounted) return;
+      setData({ inv, sales: salesSummary, orders: ordersSummary });
+    })();
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   if (!data) return null;
