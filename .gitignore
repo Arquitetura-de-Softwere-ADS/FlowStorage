@@ -1,0 +1,82 @@
+# =========================
+# Python / FastAPI
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+
+venv/
+.venv/
+env/
+ENV/
+
+*.egg-info/
+dist/
+build/
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Arquivos de ambiente
+.env
+.env.*
+!.env.example
+
+# Banco local
+*.sqlite3
+*.db
+
+# =========================
+# React / Node
+# =========================
+node_modules/
+dist/
+build/
+.vite/
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# =========================
+# PostgreSQL / Docker
+# =========================
+postgres_data/
+pgdata/
+*.sql.gz
+*.dump
+
+# Docker
+docker-compose.override.yml
+
+# =========================
+# Sistema / Editor
+# =========================
+.DS_Store
+Thumbs.db
+
+.vscode/
+.idea/
+
+# =========================
+# Logs
+# =========================
+*.log
+logs/
+
+# =========================
+# Uploads / arquivos gerados
+# =========================
+uploads/
+media/
+staticfiles/
+
+# =========================
+# Testes / cache
+# =========================
+coverage/
+.cache/

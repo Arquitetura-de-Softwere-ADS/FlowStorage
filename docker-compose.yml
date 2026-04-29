@@ -1,0 +1,32 @@
+services:
+  auth-db:
+    image: postgres:16
+    container_name: flowstorage-auth-db
+    environment:
+      POSTGRES_DB: auth_db
+      POSTGRES_USER: auth_user
+      POSTGRES_PASSWORD: 123456
+    ports:
+      - "5433:5432"
+    volumes:
+      - auth_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U auth_user -d auth_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  auth-service:
+    build:
+      context: ./services/auth-service
+    container_name: flowstorage-auth-service
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./services/auth-service/app:/app/app
+    depends_on:
+      auth-db:
+        condition: service_healthy
+
+volumes:
+  auth_db_data:
