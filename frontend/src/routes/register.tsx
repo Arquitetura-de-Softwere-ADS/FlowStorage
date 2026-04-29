@@ -16,13 +16,18 @@ function RegisterPage() {
   const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErr("");
+
     try {
-      if (password.length < 4) throw new Error("Senha deve ter ao menos 4 caracteres");
-      register(name, email, password);
-      navigate({ to: "/app" });
+      if (password.length < 6) {
+        throw new Error("Senha deve ter ao menos 6 caracteres");
+      }
+
+      await register(name, email, password); // 🔥 AGORA ESPERA
+
+      navigate({ to: "/app/" });
     } catch (e) {
       const error = e as Error;
       setErr(error.message);
@@ -39,9 +44,11 @@ function RegisterPage() {
               Voltar
             </div>
           </Link>
+
           <h1 className="mt-4 text-xl font-semibold tracking-tight">Criar conta</h1>
           <p className="text-sm text-muted-foreground mt-1">Comece a usar o painel.</p>
         </div>
+
         <form onSubmit={submit} className="space-y-3">
           <label className="block">
             <span className="text-xs font-medium">Nome</span>
@@ -52,6 +59,7 @@ function RegisterPage() {
               className="input mt-1"
             />
           </label>
+
           <label className="block">
             <span className="text-xs font-medium">E-mail</span>
             <input
@@ -62,6 +70,7 @@ function RegisterPage() {
               className="input mt-1"
             />
           </label>
+
           <label className="block">
             <span className="text-xs font-medium">Senha</span>
             <input
@@ -72,7 +81,9 @@ function RegisterPage() {
               className="input mt-1"
             />
           </label>
+
           {err && <p className="text-xs text-destructive">{err}</p>}
+
           <button
             type="submit"
             className="w-full mt-2 px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90"
@@ -80,6 +91,7 @@ function RegisterPage() {
             Criar conta
           </button>
         </form>
+
         <p className="mt-6 text-xs text-muted-foreground">
           Já tem conta?{" "}
           <Link to="/login" className="text-foreground hover:underline">
