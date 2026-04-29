@@ -21,7 +21,7 @@ def criar_produto(produto: schemas.ProdutoCreate, db: Session = Depends(get_db))
     if db_produto:
         raise HTTPException(status_code=400, detail="SKU já cadastrado")
     
-    novo_produto = models.Produto(produto.model_dump())
+    novo_produto = models.Produto(**produto.model_dump())
     db.add(novo_produto)
     db.commit()
     db.refresh(novo_produto)
