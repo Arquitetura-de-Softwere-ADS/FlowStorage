@@ -1,4 +1,5 @@
 services:
+
   sales-db:
     image: postgres:16
     environment:
@@ -21,10 +22,12 @@ services:
     ports:
       - "8002:8000"
     volumes:
-      - ./services/sales-service/app:/app/app
+      - ./services/sales-service:/app
     depends_on:
       sales-db:
         condition: service_healthy
+      inventory-service:
+        condition: service_started
         
   auth-db:
     image: postgres:16
@@ -76,12 +79,12 @@ services:
       context: ./services/inventory-service
     ports:
       - "8003:8000"
+      - "50051:50051"
     volumes:
       - ./services/inventory-service:/app
     depends_on:
       inventory-db:
         condition: service_healthy
-
 volumes:
   auth_db_data:
   inventory_db_data:

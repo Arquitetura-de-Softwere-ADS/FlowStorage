@@ -1,11 +1,10 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List
 
 
 class SaleItemCreate(BaseModel):
     product_id: int
-    quantity: int
-    price: float
+    quantity: int = Field(..., gt=0)
 
 
 class SaleCreate(BaseModel):
