@@ -6,18 +6,19 @@ export function useAuth() {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    setUser(authService.current());
+    const u = authService.current();
+    setUser(u);
     setReady(true);
   }, []);
 
-  const login = useCallback((email: string, password: string) => {
-    const u = authService.login(email, password);
+  const login = useCallback(async (email: string, password: string) => {
+    const u = await authService.login(email, password); // 🔥 await
     setUser(u);
     return u;
   }, []);
 
-  const register = useCallback((name: string, email: string, password: string) => {
-    const u = authService.register(name, email, password);
+  const register = useCallback(async (name: string, email: string, password: string) => {
+    const u = await authService.register(name, email, password); // 🔥 await
     setUser(u);
     return u;
   }, []);

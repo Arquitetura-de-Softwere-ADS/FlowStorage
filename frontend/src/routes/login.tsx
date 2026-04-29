@@ -15,12 +15,13 @@ function LoginPage() {
   const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErr("");
+
     try {
-      login(email, password);
-      navigate({ to: "/app" });
+      await login(email, password); // 🔥 AGORA ESPERA A API
+      navigate({ to: "/app/" });
     } catch (e) {
       const error = e as Error;
       setErr(error.message);
@@ -40,6 +41,7 @@ function LoginPage() {
           <h1 className="mt-4 text-xl font-semibold tracking-tight">Entrar</h1>
           <p className="text-sm text-muted-foreground mt-1">Acesse o painel de gestão.</p>
         </div>
+
         <form onSubmit={submit} className="space-y-3">
           <Field label="E-mail">
             <input
@@ -50,6 +52,7 @@ function LoginPage() {
               className="input"
             />
           </Field>
+
           <Field label="Senha">
             <input
               type="password"
@@ -59,7 +62,9 @@ function LoginPage() {
               className="input"
             />
           </Field>
+
           {err && <p className="text-xs text-destructive">{err}</p>}
+
           <button
             type="submit"
             className="w-full mt-2 px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90"
@@ -67,6 +72,7 @@ function LoginPage() {
             Entrar
           </button>
         </form>
+
         <p className="mt-6 text-xs text-muted-foreground">
           Não tem conta?{" "}
           <Link to="/register" className="text-foreground hover:underline">
