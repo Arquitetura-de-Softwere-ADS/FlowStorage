@@ -52,12 +52,14 @@ function ReportsPage() {
               {data.sales.topProducts.map((p) => (
                 <div
                   key={p.name}
-                  className="flex justify-between border-b border-border py-2.5 text-sm"
+                  className="flex justify-between  ml-4 border-b border-border py-2.5 text-sm"
                 >
                   <span>{p.name}</span>
                   <span className="text-muted-foreground">
                     {p.qty} un. ·{" "}
-                    <span className="text-foreground font-medium">R$ {p.revenue.toFixed(2)}</span>
+                    <span className="text-foreground mr-4 font-medium">
+                      R$ {p.revenue.toFixed(2)}
+                    </span>
                   </span>
                 </div>
               ))}

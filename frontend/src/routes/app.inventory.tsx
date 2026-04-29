@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { PageHeader } from "@/components/app-layout";
 import { inventoryService, type Product } from "@/services/inventory.service";
 import { Plus, Trash2 } from "lucide-react";
@@ -9,9 +9,18 @@ export const Route = createFileRoute("/app/inventory")({
 });
 
 function InventoryPage() {
-  const [items, setItems] = useState<Product[]>(() => inventoryService.list());
   const [open, setOpen] = useState(false);
-  const refresh = () => setItems(inventoryService.list());
+
+  const [items, setItems] = useState<Product[]>([]);
+
+  const refresh = async () => {
+    const data = await inventoryService.list();
+    setItems(data);
+  };
+
+  useEffect(() => {
+    refresh();
+  }, []);
 
   return (
     <div>
