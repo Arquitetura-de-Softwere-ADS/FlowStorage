@@ -5,10 +5,19 @@ from sqlalchemy.orm import Session
 from app.grpc.client import inventory_client
 from app.database import SessionLocal, engine
 from app import models, schemas
+from fastapi.middleware.cors import CORSMiddleware
 
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Serviço de Pedidos de Reposição")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # depois você pode restringir
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Dependência do Banco de Dados
 def get_db():

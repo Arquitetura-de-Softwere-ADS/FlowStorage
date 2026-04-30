@@ -27,40 +27,66 @@ function Dashboard() {
 
   useEffect(() => {
     let mounted = true;
+
     (async () => {
-      const products = await inventoryService.list();
-      const inv = {
-        totalProducts: products.length,
-        totalUnits: products.reduce((s: number, p: Product) => s + p.stock, 0),
-        totalValue: products.reduce((s: number, p: Product) => s + p.price * p.stock, 0),
-        lowStock: products.filter((p: Product) => p.stock <= p.minStock),
-      };
+      try {
+        // 🔹 INVENTÁRIO
+        const products = await inventoryService.list();
 
-      const sales = salesService.list();
-      const revenue = sales.reduce((s: number, x: Sale) => s + x.total, 0);
-      const byProduct = new Map<string, { name: string; qty: number; revenue: number }>();
-      for (const s of sales) {
-        const cur = byProduct.get(s.productId) ?? { name: s.productName, qty: 0, revenue: 0 };
-        cur.qty += s.quantity;
-        cur.revenue += s.total;
-        byProduct.set(s.productId, cur);
+        const inv = {
+          totalProducts: products.length,
+          totalUnits: products.reduce((s, p) => s + p.stock, 0),
+          totalValue: products.reduce((s, p) => s + p.price * p.stock, 0),
+          lowStock: products.filter((p) => p.stock <= p.minStock),
+        };
+
+        // 🔹 VENDAS (continua localStorage)
+        const sales = salesService.list();
+
+        const revenue = sales.reduce((s, x) => s + x.total, 0);
+
+        const byProduct = new Map<string, { name: string; qty: number; revenue: number }>();
+
+        for (const s of sales) {
+          const cur = byProduct.get(String(s.productId)) ?? {
+            name: s.productName,
+            qty: 0,
+            revenue: 0,
+          };
+
+          cur.qty += s.quantity;
+          cur.revenue += s.total;
+
+          byProduct.set(String(s.productId), cur);
+        }
+
+        const salesSummary = {
+          totalSales: sales.length,
+          revenue,
+          topProducts: [...byProduct.values()].sort((a, b) => b.revenue - a.revenue).slice(0, 5),
+        };
+
+        // 🔥 PEDIDOS (CORRIGIDO)
+        const orders = await ordersService.list();
+
+        const ordersSummary = {
+          total: orders.length,
+          pending: orders.filter((o) => o.status === "Pendente").length,
+          received: orders.filter((o) => o.status === "Recebido").length,
+        };
+
+        if (!mounted) return;
+
+        setData({
+          inv,
+          sales: salesSummary,
+          orders: ordersSummary,
+        });
+      } catch (err) {
+        console.error("Erro no dashboard:", err);
       }
-      const salesSummary = {
-        totalSales: sales.length,
-        revenue,
-        topProducts: [...byProduct.values()].sort((a, b) => b.revenue - a.revenue).slice(0, 5),
-      };
-
-      const orders = ordersService.list();
-      const ordersSummary = {
-        total: orders.length,
-        pending: orders.filter((o: RestockOrder) => o.status === "pending").length,
-        received: orders.filter((o: RestockOrder) => o.status === "received").length,
-      };
-
-      if (!mounted) return;
-      setData({ inv, sales: salesSummary, orders: ordersSummary });
     })();
+
     return () => {
       mounted = false;
     };
@@ -98,7 +124,9 @@ function Dashboard() {
   return (
     <div>
       <PageHeader title="Visão geral" description="Resumo dos serviços do sistema." />
+
       <div className="p-8 space-y-8">
+        {/* CARDS */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {stats.map((s) => (
             <div
@@ -110,15 +138,17 @@ function Dashboard() {
                 style={{ backgroundColor: s.color }}
               />
               <div className="text-xs text-muted-foreground">{s.label}</div>
-              <div className="mt-2 text-2xl font-semibold tracking-tight">{s.value}</div>
+              <div className="mt-2 text-2xl font-semibold">{s.value}</div>
               <div className="mt-1 text-xs text-muted-foreground">{s.hint}</div>
             </div>
           ))}
         </div>
 
+        {/* ESTOQUE CRÍTICO */}
         <section>
           <div className="flex items-baseline justify-between mb-3">
             <h2 className="text-sm font-semibold">Estoque crítico</h2>
+
             <Link
               to="/app/inventory"
               className="text-xs text-muted-foreground hover:text-foreground"
@@ -129,6 +159,7 @@ function Dashboard() {
               </div>
             </Link>
           </div>
+
           {data.inv.lowStock.length === 0 ? (
             <EmptyHint text="Nenhum produto abaixo do estoque mínimo." />
           ) : (
@@ -136,21 +167,21 @@ function Dashboard() {
               <table className="w-full text-sm">
                 <thead className="bg-muted/40 text-xs text-muted-foreground">
                   <tr>
-                    <th className="text-left font-medium px-4 py-2">Produto</th>
-                    <th className="text-left font-medium px-4 py-2">SKU</th>
-                    <th className="text-right font-medium px-4 py-2">Estoque</th>
-                    <th className="text-right font-medium px-4 py-2">Mínimo</th>
+                    <th className="text-left px-4 py-2">Produto</th>
+                    <th className="text-left px-4 py-2">SKU</th>
+                    <th className="text-right px-4 py-2">Estoque</th>
+                    <th className="text-right px-4 py-2">Mínimo</th>
                   </tr>
                 </thead>
                 <tbody>
                   {data.inv.lowStock.map((p) => (
-                    <tr key={p.id} className="border-t border-border">
+                    <tr key={p.id} className="border-t">
                       <td className="px-4 py-2.5">{p.name}</td>
                       <td className="px-4 py-2.5 text-muted-foreground">{p.sku}</td>
-                      <td className="px-4 py-2.5 text-right font-medium text-destructive">
+                      <td className="px-4 py-2.5 text-right text-destructive font-medium">
                         {p.stock}
                       </td>
-                      <td className="px-4 py-2.5 text-right text-muted-foreground">{p.minStock}</td>
+                      <td className="px-4 py-2.5 text-right">{p.minStock}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -159,8 +190,10 @@ function Dashboard() {
           )}
         </section>
 
+        {/* TOP PRODUTOS */}
         <section>
           <h2 className="text-sm font-semibold mb-3">Top produtos por receita</h2>
+
           {data.sales.topProducts.length === 0 ? (
             <EmptyHint text="Ainda não há vendas registradas." />
           ) : (
@@ -168,14 +201,14 @@ function Dashboard() {
               <table className="w-full text-sm">
                 <thead className="bg-muted/40 text-xs text-muted-foreground">
                   <tr>
-                    <th className="text-left font-medium px-4 py-2">Produto</th>
-                    <th className="text-right font-medium px-4 py-2">Qtd</th>
-                    <th className="text-right font-medium px-4 py-2">Receita</th>
+                    <th className="text-left px-4 py-2">Produto</th>
+                    <th className="text-right px-4 py-2">Qtd</th>
+                    <th className="text-right px-4 py-2">Receita</th>
                   </tr>
                 </thead>
                 <tbody>
                   {data.sales.topProducts.map((p) => (
-                    <tr key={p.name} className="border-t border-border">
+                    <tr key={p.name} className="border-t">
                       <td className="px-4 py-2.5">{p.name}</td>
                       <td className="px-4 py-2.5 text-right">{p.qty}</td>
                       <td className="px-4 py-2.5 text-right font-medium">
@@ -195,7 +228,7 @@ function Dashboard() {
 
 function EmptyHint({ text }: { text: string }) {
   return (
-    <div className="border border-dashed border-border rounded-lg p-6 text-center text-xs text-muted-foreground">
+    <div className="border border-dashed rounded-lg p-6 text-center text-xs text-muted-foreground">
       {text}
     </div>
   );
