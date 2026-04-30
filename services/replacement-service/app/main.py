@@ -36,7 +36,7 @@ def criar_pedido(pedido: schemas.PedidoCreate, db: Session = Depends(get_db)):
         produto_nome=response.nome,
         fornecedor=pedido.fornecedor,
         quantidade=pedido.quantidade,
-        status="Pendente"
+        status=models.StatusPedido.PENDENTE
     )
     
     db.add(novo_pedido)
@@ -55,7 +55,7 @@ def receber_pedido(pedido_id: int, db: Session = Depends(get_db)):
     if not pedido:
         raise HTTPException(status_code=404, detail="Pedido não encontrado")
     
-    if pedido.status != "Pendente":
+    if pedido.status != models.StatusPedido.PENDENTE:
         raise HTTPException(status_code=400, detail="Apenas pedidos Pendentes podem ser recebidos")
 
     # 3. Chamar o cliente gRPC para aumentar o estoque
@@ -68,7 +68,7 @@ def receber_pedido(pedido_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Erro no Inventário: {response.message}")
 
     # 4. Atualizar o status local após confirmação do gRPC
-    pedido.status = "Recebido"
+    pedido.status = models.StatusPedido.RECEBIDO
     db.commit()
     db.refresh(pedido)
     
@@ -84,9 +84,9 @@ def cancelar_pedido(pedido_id: int, db: Session = Depends(get_db)):
     if not pedido:
         raise HTTPException(status_code=404, detail="Pedido não encontrado")
     
-    if pedido.status != "Pendente":
+    if pedido.status != models.StatusPedido.PENDENTE:
         raise HTTPException(status_code=400, detail="Apenas pedidos Pendentes podem ser cancelados")
 
-    pedido.status = "Cancelado"
+    pedido.status = models.StatusPedido.CANCELADO
     db.commit()
     return {"mensagem": "Pedido cancelado com sucesso"}
