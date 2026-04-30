@@ -10,6 +10,11 @@ from app.grpc.client import get_product, decrease_stock
 router = APIRouter(prefix="/sales", tags=["Sales"])
 
 
+@router.get("/", response_model=list[SaleResponse])
+def list_sales(db: Session = Depends(get_db)):
+    return db.query(Sale).all()
+
+
 @router.post("/", response_model=SaleResponse)
 def create_sale(data: SaleCreate, db: Session = Depends(get_db)):
 
