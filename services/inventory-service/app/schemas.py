@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import Optional
-from models import CategoriaEnum
+from app.models import CategoriaEnum
 
 # O que o usuário envia para cadastrar
 class ProdutoCreate(BaseModel):

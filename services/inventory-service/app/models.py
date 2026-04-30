@@ -1,6 +1,6 @@
 import enum
 from sqlalchemy import Column, Integer, String, Float, Enum
-from database import Base
+from app.database import Base
 
 # Definindo as categorias permitidas
 class CategoriaEnum(enum.Enum):

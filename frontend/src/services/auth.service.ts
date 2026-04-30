@@ -1,47 +1,69 @@
-// Microserviço: Autenticação
-import { readStore, writeStore, uid } from "./storage";
-
 export interface User {
-  id: string;
+  id: number;
   name: string;
   email: string;
 }
 
-interface StoredUser extends User {
-  password: string;
-}
-
-const USERS_KEY = "svc.auth.users";
-const SESSION_KEY = "svc.auth.session";
-
-function getUsers(): StoredUser[] {
-  return readStore<StoredUser[]>(USERS_KEY, []);
-}
+const API_URL = "http://localhost:8001/auth";
 
 export const authService = {
-  register(name: string, email: string, password: string): User {
-    const users = getUsers();
-    if (users.some((u) => u.email === email)) {
-      throw new Error("E-mail já cadastrado");
+  async register(name: string, email: string, password: string): Promise<User> {
+    const res = await fetch(`${API_URL}/register`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ name, email, password }),
+    });
+
+    if (!res.ok) {
+      const data = await res.json();
+      throw new Error(data.detail);
     }
-    const user: StoredUser = { id: uid(), name, email, password };
-    users.push(user);
-    writeStore(USERS_KEY, users);
-    const { password: _, ...safe } = user;
-    writeStore(SESSION_KEY, safe);
-    return safe;
+
+    return res.json();
   },
-  login(email: string, password: string): User {
-    const user = getUsers().find((u) => u.email === email && u.password === password);
-    if (!user) throw new Error("Credenciais inválidas");
-    const { password: _, ...safe } = user;
-    writeStore(SESSION_KEY, safe);
-    return safe;
+
+  async login(email: string, password: string): Promise<User> {
+    const res = await fetch(`${API_URL}/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ email, password }),
+    });
+
+    if (!res.ok) {
+      const data = await res.json();
+      throw new Error(data.detail);
+    }
+
+    const data = await res.json();
+
+    // 🔥 salva token
+    localStorage.setItem("token", data.access_token);
+
+    // 🔥 busca usuário
+    const meRes = await fetch(`${API_URL}/me`, {
+      headers: {
+        Authorization: `Bearer ${data.access_token}`,
+      },
+    });
+
+    const user = await meRes.json();
+
+    localStorage.setItem("user", JSON.stringify(user));
+
+    return user;
   },
+
   logout() {
-    if (typeof window !== "undefined") localStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
   },
+
   current(): User | null {
-    return readStore<User | null>(SESSION_KEY, null);
+    const user = localStorage.getItem("user");
+    return user ? JSON.parse(user) : null;
   },
 };
