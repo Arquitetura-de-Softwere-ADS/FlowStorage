@@ -1,6 +1,33 @@
 services:
 
+  sales-db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: sales_db
+      POSTGRES_USER: sales_user
+      POSTGRES_PASSWORD: 123456
+    ports:
+      - "5434:5432"
+    volumes:
+      - sales_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sales_user -d sales_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
+  sales-service:
+    build:
+      context: ./services/sales-service
+    ports:
+      - "8002:8000"
+    volumes:
+      - ./services/sales-service:/app
+    depends_on:
+      sales-db:
+        condition: service_healthy
+      inventory-service:
+        condition: service_started
         
   auth-db:
     image: postgres:16
