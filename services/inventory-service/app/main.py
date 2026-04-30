@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
-import models, schemas
-from database import SessionLocal, engine
+from app import models, schemas
+from app.database import SessionLocal, engine
 from fastapi.middleware.cors import CORSMiddleware
 
 # Cria tabelas
@@ -95,3 +95,13 @@ def excluir_produto(produto_id: int, db: Session = Depends(get_db)):
     db.delete(produto)
     db.commit()
     return {"mensagem": f"Produto {produto_id} removido com sucesso"}
+
+@app.patch("/produtos/{produto_id}/adicionar-estoque/{quantidade}")
+def adicionar_estoque(produto_id: int, quantidade: int, db: Session = Depends(get_db)):
+    produto = db.query(models.Produto).filter(models.Produto.id == produto_id).first()
+    if not produto:
+        raise HTTPException(status_code=404, detail="Produto não encontrado")
+    
+    produto.estoque += quantidade
+    db.commit()
+    return {"mensagem": "Estoque atualizado", "novo_estoque": produto.estoque}
