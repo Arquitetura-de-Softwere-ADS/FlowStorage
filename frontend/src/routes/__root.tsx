@@ -2,6 +2,9 @@ import { Outlet, Link, createRootRoute, HeadContent, Scripts } from "@tanstack/r
 
 import appCss from "../styles.css?url";
 
+const APP_NAME = "FlowStorage";
+const APP_DESCRIPTION = "FlowStorage";
+
 function NotFoundComponent() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -29,14 +32,14 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
-      { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      { title: APP_NAME },
+      { name: "description", content: APP_DESCRIPTION },
+      { name: "author", content: APP_NAME },
+      { property: "og:title", content: APP_NAME },
+      { property: "og:description", content: APP_DESCRIPTION },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
-      { name: "twitter:site", content: "@Lovable" },
+      { name: "twitter:site", content: "" },
     ],
     links: [
       {
