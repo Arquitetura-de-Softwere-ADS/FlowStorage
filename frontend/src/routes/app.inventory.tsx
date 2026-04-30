@@ -174,11 +174,18 @@ function NewProductDialog({ onClose, onSaved }: { onClose: () => void; onSaved: 
             </Row>
 
             <Row label="Categoria">
-              <input
+              <select
+                required
                 className="input"
                 value={form.category}
                 onChange={(e) => setForm({ ...form, category: e.target.value })}
-              />
+              >
+                <option value="">Selecione</option>
+                <option value="Eletrônicos">Eletrônicos</option>
+                <option value="Alimentos">Alimentos</option>
+                <option value="Vestuário">Vestuário</option>
+                <option value="Outros">Outros</option>
+              </select>
             </Row>
           </div>
 
