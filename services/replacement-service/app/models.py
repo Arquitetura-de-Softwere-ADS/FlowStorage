@@ -1,7 +1,7 @@
 import datetime
 import enum
 from sqlalchemy import Column, DateTime, Integer, String, Enum
-from database import Base
+from app.database import Base
 ''
 class StatusPedido(enum.Enum):
     RECEBIDO = "Recebido"

@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Sale, SaleItem
 from app.schemas import SaleCreate, SaleResponse
-from app.grpc_client import get_product, decrease_stock
+from app.grpc.client import get_product, decrease_stock
 
 
 router = APIRouter(prefix="/sales", tags=["Sales"])

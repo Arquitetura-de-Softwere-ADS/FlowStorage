@@ -1,7 +1,6 @@
 import grpc
 
-import inventory_pb2
-import inventory_pb2_grpc
+from app.grpc.generated import inventory_pb2, inventory_pb2_grpc
 
 
 INVENTORY_GRPC_URL = "inventory-service:50051"
@@ -15,22 +14,11 @@ def get_inventory_stub():
 
 def get_product(product_id: int):
     stub = get_inventory_stub()
-
-    response = stub.GetProduct(
-        inventory_pb2.ProductRequest(product_id=product_id)
-    )
-
-    return response
+    return stub.GetProduct(inventory_pb2.ProductRequest(product_id=product_id))
 
 
 def decrease_stock(product_id: int, quantity: int):
     stub = get_inventory_stub()
-
-    response = stub.DecreaseStock(
-        inventory_pb2.DecreaseStockRequest(
-            product_id=product_id,
-            quantity=quantity
-        )
+    return stub.DecreaseStock(
+        inventory_pb2.DecreaseStockRequest(product_id=product_id, quantity=quantity)
     )
-
-    return response
