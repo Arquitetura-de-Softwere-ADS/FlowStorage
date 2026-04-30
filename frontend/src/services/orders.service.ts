@@ -1,52 +1,56 @@
-// Microserviço: Pedidos de Reposição
-import { readStore, writeStore, uid } from "./storage";
-import { inventoryService } from "./inventory.service";
+// Microserviço: Pedidos de Reposição (AGORA COM API REAL)
 
-export type OrderStatus = "pending" | "received" | "cancelled";
+const API_URL = "http://localhost:8004"; // 🔥 ajuste se necessário
+
+export type OrderStatus = "Pendente" | "Recebido" | "Cancelado";
 
 export interface RestockOrder {
-  id: string;
-  productId: string;
-  productName: string;
-  quantity: number;
-  supplier: string;
+  id: number;
+  produto_id: number;
+  produto_nome: string;
+  quantidade: number;
+  fornecedor: string;
   status: OrderStatus;
-  createdAt: string;
+  data: string;
 }
 
-const KEY = "svc.orders.restock";
-
 export const ordersService = {
-  list(): RestockOrder[] {
-    return readStore<RestockOrder[]>(KEY, []);
+  async list(): Promise<RestockOrder[]> {
+    const res = await fetch(`${API_URL}/pedidos/`);
+    if (!res.ok) throw new Error("Erro ao buscar pedidos");
+    return res.json();
   },
-  create(data: { productId: string; quantity: number; supplier: string }): RestockOrder {
-    const product = inventoryService.get(data.productId);
-    if (!product) throw new Error("Produto não encontrado");
-    const order: RestockOrder = {
-      id: uid(),
-      productId: data.productId,
-      productName: product.name,
-      quantity: data.quantity,
-      supplier: data.supplier,
-      status: "pending",
-      createdAt: new Date().toISOString(),
-    };
-    const items = this.list();
-    items.unshift(order);
-    writeStore(KEY, items);
-    return order;
-  },
-  setStatus(id: string, status: OrderStatus) {
-    const items = this.list();
-    const idx = items.findIndex((o) => o.id === id);
-    if (idx === -1) return;
-    const prev = items[idx].status;
-    items[idx].status = status;
-    writeStore(KEY, items);
-    // Se recebido, atualiza estoque
-    if (status === "received" && prev !== "received") {
-      inventoryService.adjustStock(items[idx].productId, items[idx].quantity);
+
+  async create(data: { produto_id: number; quantidade: number; fornecedor: string }) {
+    const res = await fetch(`${API_URL}/pedidos/`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(data),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(text || "Erro ao criar pedido");
     }
+
+    return res.json();
+  },
+
+  async receber(id: number) {
+    const res = await fetch(`${API_URL}/pedidos/${id}/receber`, {
+      method: "POST",
+    });
+
+    if (!res.ok) throw new Error("Erro ao receber pedido");
+  },
+
+  async cancelar(id: number) {
+    const res = await fetch(`${API_URL}/pedidos/${id}/cancelar`, {
+      method: "POST",
+    });
+
+    if (!res.ok) throw new Error("Erro ao cancelar pedido");
   },
 };

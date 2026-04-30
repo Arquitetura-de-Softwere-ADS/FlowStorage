@@ -1,40 +1,44 @@
-// Microserviço: Registro de Vendas
-import { readStore, writeStore, uid } from "./storage";
-import { inventoryService } from "./inventory.service";
+const API_URL = "http://localhost:8002/sales"; // ajuste porta do seu sales-service
 
-export interface Sale {
-  id: string;
-  productId: string;
-  productName: string;
+export interface SaleItem {
+  product_id: number;
   quantity: number;
-  unitPrice: number;
-  total: number;
-  createdAt: string;
+  price: number;
 }
 
-const KEY = "svc.sales.records";
+export interface SaleItemCreate {
+  product_id: number;
+  quantity: number;
+}
+
+export interface Sale {
+  id: number;
+  total: number;
+  created_at: string;
+  items: SaleItem[];
+}
 
 export const salesService = {
-  list(): Sale[] {
-    return readStore<Sale[]>(KEY, []);
+  async list(): Promise<Sale[]> {
+    const res = await fetch(API_URL);
+    if (!res.ok) throw new Error("Erro ao buscar vendas");
+    return res.json();
   },
-  create(productId: string, quantity: number): Sale {
-    const product = inventoryService.get(productId);
-    if (!product) throw new Error("Produto não encontrado");
-    if (product.stock < quantity) throw new Error("Estoque insuficiente");
-    inventoryService.adjustStock(productId, -quantity);
-    const sale: Sale = {
-      id: uid(),
-      productId,
-      productName: product.name,
-      quantity,
-      unitPrice: product.price,
-      total: product.price * quantity,
-      createdAt: new Date().toISOString(),
-    };
-    const items = this.list();
-    items.unshift(sale);
-    writeStore(KEY, items);
-    return sale;
+
+  async create(items: SaleItemCreate[]): Promise<Sale> {
+    const res = await fetch(API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ items }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || "Erro ao criar venda");
+    }
+
+    return res.json();
   },
 };

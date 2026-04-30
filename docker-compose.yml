@@ -85,7 +85,39 @@ services:
     depends_on:
       inventory-db:
         condition: service_healthy
+
+
+  replacement-db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: replacement_db
+      POSTGRES_USER: replacement_user
+      POSTGRES_PASSWORD: 123456
+    ports:
+      - "5436:5432"
+    volumes:
+      - replacement_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U replacement_user -d replacement_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  replacement-service:
+    build:
+      context: ./services/replacement-service
+    ports:
+      - "8004:8000"
+    volumes:
+      - ./services/replacement-service/app:/app/app
+    depends_on:
+      replacement-db:
+        condition: service_healthy
+      inventory-service:
+        condition: service_started
+
 volumes:
   auth_db_data:
   inventory_db_data:
   sales_db_data:
+  replacement_db_data:
