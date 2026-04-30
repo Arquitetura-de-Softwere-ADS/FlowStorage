@@ -1,15 +1,27 @@
 import { Link, useNavigate, useRouterState, Outlet } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
-import { Boxes, ClipboardList, ShoppingCart, BarChart3, LayoutDashboard, LogOut } from "lucide-react";
+import {
+  Boxes,
+  ClipboardList,
+  ShoppingCart,
+  BarChart3,
+  LayoutDashboard,
+  LogOut,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const nav = [
   { to: "/app", label: "Visão geral", icon: LayoutDashboard, exact: true, color: "var(--primary)" },
   { to: "/app/inventory", label: "Inventário", icon: Boxes, color: "var(--info)" },
-  { to: "/app/orders", label: "Pedidos de reposição", icon: ClipboardList, color: "var(--warning)" },
+  {
+    to: "/app/orders",
+    label: "Pedidos de reposição",
+    icon: ClipboardList,
+    color: "var(--warning)",
+  },
   { to: "/app/sales", label: "Vendas", icon: ShoppingCart, color: "var(--success)" },
-  { to: "/app/reports", label: "Relatórios", icon: BarChart3, color: "var(--primary)" },
+  // Relatórios removido: aba eliminada
 ];
 
 export function AppLayout() {
@@ -57,7 +69,10 @@ export function AppLayout() {
             <div className="text-xs text-muted-foreground truncate">{user.email}</div>
           </div>
           <button
-            onClick={() => { logout(); navigate({ to: "/login" }); }}
+            onClick={() => {
+              logout();
+              navigate({ to: "/login" });
+            }}
             className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
           >
             <LogOut className="h-3.5 w-3.5" /> Sair
@@ -71,7 +86,15 @@ export function AppLayout() {
   );
 }
 
-export function PageHeader({ title, description, actions }: { title: string; description?: string; actions?: React.ReactNode }) {
+export function PageHeader({
+  title,
+  description,
+  actions,
+}: {
+  title: string;
+  description?: string;
+  actions?: React.ReactNode;
+}) {
   return (
     <div className="border-b border-border px-8 h-16 flex items-center justify-between">
       <div>
