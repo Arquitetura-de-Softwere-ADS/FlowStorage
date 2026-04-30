@@ -11,15 +11,20 @@ export const Route = createFileRoute("/app/sales")({
 
 function SalesPage() {
   const [items, setItems] = useState<Sale[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [open, setOpen] = useState(false);
 
-  const refresh = () => {
-    const data = salesService.list();
+  const refresh = async () => {
+    const data = await salesService.list();
     setItems(data);
   };
 
   useEffect(() => {
-    refresh();
+    (async () => {
+      const prods = await inventoryService.list();
+      setProducts(prods);
+      await refresh();
+    })();
   }, []);
 
   return (
@@ -53,23 +58,32 @@ function SalesPage() {
               </thead>
 
               <tbody>
-                {items.map((s) => (
-                  <tr key={s.id} className="border-t border-border">
-                    <td className="px-4 py-2.5 font-medium">{s.productName}</td>
+                {items.flatMap((s) =>
+                  s.items.map((item, idx) => {
+                    const product = products.find((p) => p.id === item.product_id);
+                    return (
+                      <tr key={`${s.id}-${idx}`} className="border-t border-border">
+                        <td className="px-4 py-2.5 font-medium">
+                          {product?.name || `Produto #${item.product_id}`}
+                        </td>
 
-                    <td className="px-4 py-2.5 text-right">{s.quantity}</td>
+                        <td className="px-4 py-2.5 text-right">{item.quantity}</td>
 
-                    <td className="px-4 py-2.5 text-right text-muted-foreground">
-                      R$ {s.unitPrice.toFixed(2)}
-                    </td>
+                        <td className="px-4 py-2.5 text-right text-muted-foreground">
+                          R$ {item.price.toFixed(2)}
+                        </td>
 
-                    <td className="px-4 py-2.5 text-right font-medium">R$ {s.total.toFixed(2)}</td>
+                        <td className="px-4 py-2.5 text-right font-medium">
+                          R$ {(item.price * item.quantity).toFixed(2)}
+                        </td>
 
-                    <td className="px-4 py-2.5 text-xs text-muted-foreground">
-                      {new Date(s.createdAt).toLocaleString("pt-BR")}
-                    </td>
-                  </tr>
-                ))}
+                        <td className="px-4 py-2.5 text-xs text-muted-foreground">
+                          {new Date(s.created_at).toLocaleString("pt-BR")}
+                        </td>
+                      </tr>
+                    );
+                  }),
+                )}
               </tbody>
             </table>
           </div>
@@ -98,12 +112,7 @@ function NewSaleDialog({ onClose, onSaved }: { onClose: () => void; onSaved: () 
   useEffect(() => {
     (async () => {
       const data = await inventoryService.list();
-      const available = data.filter((p) => p.stock > 0);
-      setProducts(available);
-
-      if (available.length > 0) {
-        setProductId(available[0].id);
-      }
+      setProducts(data);
     })();
   }, []);
 
@@ -111,7 +120,12 @@ function NewSaleDialog({ onClose, onSaved }: { onClose: () => void; onSaved: () 
     e.preventDefault();
 
     try {
-      await salesService.create(productId, parseInt(quantity));
+      await salesService.create([
+        {
+          product_id: productId,
+          quantity: parseInt(quantity),
+        },
+      ]);
       onSaved();
     } catch (e) {
       const error = e as Error;
@@ -140,7 +154,9 @@ function NewSaleDialog({ onClose, onSaved }: { onClose: () => void; onSaved: () 
                 value={productId}
                 onChange={(e) => setProductId(Number(e.target.value))}
                 className="input mt-1"
+                required
               >
+                <option value={0}>Selecione um produto...</option>
                 {products.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name} — {p.stock} em estoque

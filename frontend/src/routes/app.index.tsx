@@ -41,7 +41,7 @@ function Dashboard() {
         };
 
         // 🔹 VENDAS (continua localStorage)
-        const sales = salesService.list();
+        const sales = await salesService.list();
 
         const revenue = sales.reduce((s, x) => s + x.total, 0);
 
