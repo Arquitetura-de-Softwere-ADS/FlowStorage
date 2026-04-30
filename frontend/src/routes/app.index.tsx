@@ -40,33 +40,48 @@ function Dashboard() {
           lowStock: products.filter((p) => p.stock <= p.minStock),
         };
 
-        // 🔹 VENDAS (continua localStorage)
+        // 🔹 VENDAS
         const sales = await salesService.list();
 
         const revenue = sales.reduce((s, x) => s + x.total, 0);
 
-        const byProduct = new Map<string, { name: string; qty: number; revenue: number }>();
+        const byProduct = new Map<number, { product_id: number; qty: number; revenue: number }>();
 
-        for (const s of sales) {
-          const cur = byProduct.get(String(s.productId)) ?? {
-            name: s.productName,
-            qty: 0,
-            revenue: 0,
-          };
+        for (const sale of sales) {
+          for (const item of sale.items) {
+            const cur = byProduct.get(item.product_id) ?? {
+              product_id: item.product_id,
+              qty: 0,
+              revenue: 0,
+            };
 
-          cur.qty += s.quantity;
-          cur.revenue += s.total;
+            cur.qty += item.quantity;
+            cur.revenue += item.price * item.quantity;
 
-          byProduct.set(String(s.productId), cur);
+            byProduct.set(item.product_id, cur);
+          }
         }
+
+        // Agrupa produtos com seus nomes
+        const topProductsData = [...byProduct.values()]
+          .map((item) => {
+            const product = products.find((p) => p.id === item.product_id);
+            return {
+              name: product?.name || `Produto #${item.product_id}`,
+              qty: item.qty,
+              revenue: item.revenue,
+            };
+          })
+          .sort((a, b) => b.revenue - a.revenue)
+          .slice(0, 5);
 
         const salesSummary = {
           totalSales: sales.length,
           revenue,
-          topProducts: [...byProduct.values()].sort((a, b) => b.revenue - a.revenue).slice(0, 5),
+          topProducts: topProductsData,
         };
 
-        // 🔥 PEDIDOS (CORRIGIDO)
+        // 🔥 PEDIDOS
         const orders = await ordersService.list();
 
         const ordersSummary = {
