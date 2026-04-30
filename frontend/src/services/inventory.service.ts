@@ -37,7 +37,10 @@ export const inventoryService = {
     return items[idx];
   },
   remove(id: string) {
-    writeStore(KEY, this.list().filter((p) => p.id !== id));
+    writeStore(
+      KEY,
+      this.list().filter((p) => p.id !== id),
+    );
   },
   adjustStock(id: string, delta: number) {
     const p = this.get(id);
