@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -5,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.grpc.client import inventory_client
 from app.database import SessionLocal, engine
 from app import models, schemas
+from app.messaging import publish_replacement_received
 from fastapi.middleware.cors import CORSMiddleware
 
 models.Base.metadata.create_all(bind=engine)
@@ -80,6 +83,15 @@ def receber_pedido(pedido_id: int, db: Session = Depends(get_db)):
     pedido.status = models.StatusPedido.RECEBIDO
     db.commit()
     db.refresh(pedido)
+
+    publish_replacement_received(
+        replacement_id=pedido.id,
+        product_id=pedido.produto_id,
+        product_name=pedido.produto_nome,
+        quantity_received=pedido.quantidade,
+        current_stock=response.current_stock,
+        received_at=datetime.utcnow(),
+    )
     
     return {
         "mensagem": "Pedido recebido e estoque atualizado!", 
