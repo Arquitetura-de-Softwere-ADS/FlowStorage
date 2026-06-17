@@ -147,6 +147,8 @@ services:
       RABBITMQ_USER: guest
       RABBITMQ_PASSWORD: guest
       RABBITMQ_EXCHANGE: flowstorage.events
+      RABBITMQ_QUEUE: replacement-service.stock-low
+      RABBITMQ_ROUTING_KEYS: stock.low
     volumes:
       - ./services/replacement-service/app:/app/app
     depends_on:

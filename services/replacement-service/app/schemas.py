@@ -15,6 +15,7 @@ class PedidoResponse(PedidoBase):
     produto_nome: str
     status: str
     data: datetime
+    origin: str
 
     class Config:
         from_attributes = True

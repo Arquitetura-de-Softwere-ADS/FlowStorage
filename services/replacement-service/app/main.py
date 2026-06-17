@@ -1,16 +1,18 @@
 from datetime import datetime
+from threading import Thread
 
 from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 # Importamos o cliente que você criou (ajuste o caminho se necessário)
 from app.grpc.client import inventory_client
-from app.database import SessionLocal, engine
+from app.database import SessionLocal, engine, ensure_schema
 from app import models, schemas
-from app.messaging import publish_replacement_received
+from app.messaging import publish_replacement_received, start_consumer
 from fastapi.middleware.cors import CORSMiddleware
 
 models.Base.metadata.create_all(bind=engine)
+ensure_schema()
 
 app = FastAPI(title="Serviço de Pedidos de Reposição")
 
@@ -30,6 +32,12 @@ def get_db():
     finally:
         db.close()
 
+
+@app.on_event("startup")
+def startup_event():
+    consumer_thread = Thread(target=start_consumer, daemon=True)
+    consumer_thread.start()
+
 @app.post("/pedidos/", response_model=schemas.PedidoResponse)
 def criar_pedido(pedido: schemas.PedidoCreate, db: Session = Depends(get_db)):
     # 1. Chamar o Inventário via nosso cliente gRPC simplificado
@@ -48,7 +56,8 @@ def criar_pedido(pedido: schemas.PedidoCreate, db: Session = Depends(get_db)):
         produto_nome=response.nome,
         fornecedor=pedido.fornecedor,
         quantidade=pedido.quantidade,
-        status=models.StatusPedido.PENDENTE
+        status=models.StatusPedido.PENDENTE,
+        origin=models.ORDER_ORIGIN_MANUAL,
     )
     
     db.add(novo_pedido)
