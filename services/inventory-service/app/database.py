@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
@@ -13,3 +13,16 @@ SessionLocal = sessionmaker(
 )
 
 Base = declarative_base()
+
+
+def ensure_schema():
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "ALTER TABLE produtos "
+                "ADD COLUMN IF NOT EXISTS auto_reorder_enabled BOOLEAN NOT NULL DEFAULT FALSE"
+            )
+        )
+        connection.execute(
+            text("ALTER TABLE produtos ADD COLUMN IF NOT EXISTS fornecedor VARCHAR")
+        )

@@ -1,12 +1,13 @@
 from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app import models, schemas
-from app.database import SessionLocal, engine
-from app.messaging import publish_stock_events
+from app.database import SessionLocal, engine, ensure_schema
+from app.messaging import publish_stock_events, publish_stock_low_event
 from fastapi.middleware.cors import CORSMiddleware
 
 # Cria tabelas
 models.Base.metadata.create_all(bind=engine)
+ensure_schema()
 
 app = FastAPI(
     title="inventory Service",
@@ -88,10 +89,39 @@ def atualizar_produto(produto_id: int, dados: schemas.ProdutoCreate, db: Session
         publish_stock_events(
             produto,
             previous_stock=estoque_anterior,
+            previous_minimum_stock=minimo_anterior,
             primary_event_type="stock.updated",
         )
 
     return produto
+
+
+@app.patch(
+    "/produtos/{produto_id}/auto-reorder",
+    response_model=schemas.AutoReorderResponse,
+)
+def atualizar_reposicao_automatica(
+    produto_id: int,
+    dados: schemas.AutoReorderUpdate,
+    db: Session = Depends(get_db),
+):
+    produto = db.query(models.Produto).filter(models.Produto.id == produto_id).first()
+
+    if not produto:
+        raise HTTPException(status_code=404, detail="Produto não encontrado")
+
+    estava_desativado = not bool(produto.auto_reorder_enabled)
+    produto.auto_reorder_enabled = dados.enabled
+    db.commit()
+    db.refresh(produto)
+
+    if dados.enabled and estava_desativado and produto.estoque <= produto.minimo:
+        publish_stock_low_event(produto, previous_stock=produto.estoque)
+
+    return {
+        "product_id": produto.id,
+        "auto_reorder_enabled": produto.auto_reorder_enabled,
+    }
 
 
 # =========================
