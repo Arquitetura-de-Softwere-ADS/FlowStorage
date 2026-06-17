@@ -137,14 +137,14 @@ def build_notification_text(event: dict[str, Any], event_type: str) -> tuple[str
 
 def get_notification_user_ids(db: Session, product_id: int, event_type: str) -> set[int]:
     if event_type in CRITICAL_EVENTS:
-        user_ids = {GLOBAL_NOTIFICATION_USER_ID}
-        rows = db.query(Subscription.user_id).distinct().all()
-        user_ids.update(user_id for (user_id,) in rows)
-        return user_ids
+        return {GLOBAL_NOTIFICATION_USER_ID}
 
     subscriptions = (
         db.query(Subscription)
-        .filter(Subscription.product_id == product_id)
+        .filter(
+            Subscription.product_id == product_id,
+            Subscription.user_id == GLOBAL_NOTIFICATION_USER_ID,
+        )
         .all()
     )
     return {subscription.user_id for subscription in subscriptions}
@@ -180,7 +180,13 @@ def process_event(event: dict[str, Any], event_type: str):
         user_ids = get_notification_user_ids(db, int(product_id), event_type)
 
         if not user_ids:
-            log(f"Nenhum usuário inscrito no produto {product_id}")
+            if event_type in CRITICAL_EVENTS:
+                log(f"Evento crítico sem usuário global configurado para produto {product_id}")
+            else:
+                log(
+                    f"Evento {event_type} ignorado para produto {product_id}: "
+                    "sininho desativado"
+                )
             mark_event_processed(db, event_id, event_type)
             db.commit()
             return

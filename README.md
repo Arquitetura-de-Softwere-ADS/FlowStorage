@@ -304,7 +304,7 @@ O projeto usa RabbitMQ para demonstrar uma arquitetura baseada em mensagens com 
 - **Assinantes**: `notification-service` e `replacement-service`
 - **Exchange**: `flowstorage.events`
 - **Tipo da exchange**: `topic`
-- **Eventos consumidos pelo notification-service**: `stock.updated` e `stock.low`
+- **Eventos consumidos pelo notification-service**: eventos comuns de estoque/venda/reposição e `stock.low`
 - **Evento consumido pelo replacement-service**: `stock.low`
 - **Fila de notificações**: `notification-service.stock`
 - **Fila de reposição automática**: `replacement-service.stock-low`
@@ -329,9 +329,9 @@ Quando o estoque é alterado pelo endpoint HTTP do inventário ou pelos fluxos g
 }
 ```
 
-O `stock.low` é publicado preferencialmente quando o produto entra no estado crítico, ou seja, quando sai de uma situação acima do mínimo e passa para `estoque <= minimo`. Se o produto já estava crítico e cai de 4 para 3, o inventário evita republicar a entrada crítica. Mesmo assim, o replacement-service também se protege contra eventos repetidos.
+O `stock.low` é publicado quando o produto entra no estado crítico, ou seja, quando sai de uma situação acima do mínimo e passa para `estoque <= minimo`. Isso vale para atualização HTTP do inventário e para venda pelo `sales-service`, pois a venda reduz estoque via gRPC `DecreaseStock`, e o próprio `inventory-service` publica o evento após salvar o estoque final. Se o produto já estava crítico e a reposição automática estiver ativa, uma nova queda também pode republicar `stock.low` para garantir que o replacement-service tente criar o pedido; pedidos duplicados continuam bloqueados no replacement-service.
 
-O `notification-service` mantém uma fila própria ligada às routing keys configuradas no compose. Ao receber `stock.low`, ele cria notificação crítica mesmo que o sino daquele produto esteja desativado.
+O `notification-service` mantém uma fila própria ligada às routing keys configuradas no compose. Eventos comuns, como venda, recebimento e alteração normal de estoque, só geram notificação quando o usuário tem o sininho ativo para aquele produto. Ao receber `stock.low`, ele cria notificação crítica mesmo que o sino daquele produto esteja desativado.
 
 O `replacement-service` mantém a fila `replacement-service.stock-low`, ligada somente à routing key `stock.low`. Ao receber o evento, ele:
 
@@ -342,6 +342,8 @@ O `replacement-service` mantém a fila `replacement-service.stock-low`, ligada s
 - verifica se já existe pedido `Pendente` para o mesmo produto;
 - calcula `quantidade = max(minimum_stock - current_quantity, 1)`;
 - cria o pedido como `origin = "AUTOMATIC"` quando existe fornecedor válido.
+
+A regra de criação fica centralizada em `services/replacement-service/app/auto_reorder.py`, na função `create_automatic_replacement_if_needed(...)`. O consumidor RabbitMQ apenas monta os dados do evento e chama essa função. Assim, tanto o caso “checkbox ativado enquanto o produto já está crítico” quanto o caso “produto entra no crítico depois que o checkbox já estava ativado” passam pela mesma regra.
 
 Fluxo esperado:
 
@@ -366,16 +368,15 @@ Logs esperados no `notification-service`:
 [notification-service] Conectado ao RabbitMQ
 [notification-service] Aguardando eventos de estoque
 [notification-service] Evento recebido: stock.low
-[notification-service] Produto monitorado encontrado: produto 3, 1 inscrição(ões)
 [notification-service] Notificação criada para o usuário 1
 ```
 
 Logs esperados no `replacement-service`:
 
 ```text
-[replacement-service] Evento stock.low recebido para o produto 3
-[replacement-service] Reposição automática ativada
-[replacement-service] Pedido automático criado com quantidade 5
+[replacement-service] Evento stock.low recebido para o produto 3.
+[replacement-service] Reposição automática ativada.
+[replacement-service] Pedido automático criado para o produto 3 com quantidade 5.
 ```
 
 ### Teste do fluxo de notificações
@@ -458,8 +459,9 @@ O sistema não usa fornecedor fixo no código. A reposição automática tenta r
 
 1. `fornecedor` salvo no produto e enviado pelo evento `stock.low`.
 2. fornecedor do pedido mais recente já existente para o mesmo produto.
+3. valor configurável `AUTOMATIC_REORDER_FALLBACK_SUPPLIER` (`Fornecedor pendente` no `docker-compose.yml`).
 
-Se nenhum fornecedor válido existir, o evento é processado com segurança, mas o pedido automático não é criado. Nesse caso, configure o fornecedor do produto pela criação/API do inventário ou crie um primeiro pedido manual com fornecedor para aquele produto.
+Assim, se o produto entrar em estado crítico com reposição automática ativa e ainda não tiver fornecedor configurado, o pedido automático ainda é criado e fica claro na tela de pedidos que o fornecedor precisa ser revisado.
 
 ### Teste no navegador
 
