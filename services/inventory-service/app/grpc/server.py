@@ -4,6 +4,7 @@ import grpc
 
 from app.database import SessionLocal
 from app.grpc.generated import inventory_pb2, inventory_pb2_grpc
+from app.messaging import publish_stock_events
 from app.models import Produto
 
 
@@ -42,9 +43,11 @@ class InventoryService(inventory_pb2_grpc.InventoryServiceServicer):
                     current_stock=produto.estoque,
                 )
 
+            estoque_anterior = produto.estoque
             produto.estoque -= request.quantity
             db.commit()
             db.refresh(produto)
+            publish_stock_events(produto, previous_stock=estoque_anterior)
 
             return inventory_pb2.StockResponse(
                 success=True,
@@ -66,10 +69,12 @@ class InventoryService(inventory_pb2_grpc.InventoryServiceServicer):
                     current_stock=0,
                 )
 
+            estoque_anterior = produto.estoque
             produto.estoque += request.quantity
 
             db.commit()
             db.refresh(produto)
+            publish_stock_events(produto, previous_stock=estoque_anterior)
 
             return inventory_pb2.StockResponse(
                 success=True,

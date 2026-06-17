@@ -5,6 +5,7 @@ from app.database import get_db
 from app.models import Sale, SaleItem
 from app.schemas import SaleCreate, SaleResponse
 from app.grpc.client import get_product, decrease_stock
+from app.messaging import publish_sale_created
 
 
 router = APIRouter(prefix="/sales", tags=["Sales"])
@@ -41,6 +42,7 @@ def create_sale(data: SaleCreate, db: Session = Depends(get_db)):
 
         items_to_save.append({
             "product_id": product.id,
+            "product_name": product.nome,
             "quantity": item.quantity,
             "price": product.preco
         })
@@ -50,6 +52,8 @@ def create_sale(data: SaleCreate, db: Session = Depends(get_db)):
     db.add(sale)
     db.commit()
     db.refresh(sale)
+
+    sale_events = []
 
     for item in items_to_save:
         stock_response = decrease_stock(
@@ -63,6 +67,15 @@ def create_sale(data: SaleCreate, db: Session = Depends(get_db)):
                 detail=stock_response.message
             )
 
+        sale_events.append({
+            "sale_id": sale.id,
+            "product_id": item["product_id"],
+            "product_name": item["product_name"],
+            "quantity_sold": item["quantity"],
+            "current_stock": stock_response.current_stock,
+            "created_at": sale.created_at,
+        })
+
         sale_item = SaleItem(
             sale_id=sale.id,
             product_id=item["product_id"],
@@ -73,5 +86,8 @@ def create_sale(data: SaleCreate, db: Session = Depends(get_db)):
         db.add(sale_item)
 
     db.commit()
+
+    for event in sale_events:
+        publish_sale_created(**event)
 
     return sale
