@@ -2,6 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app import models, schemas
 from app.database import SessionLocal, engine
+from app.messaging import publish_stock_events
 from fastapi.middleware.cors import CORSMiddleware
 
 # Cria tabelas
@@ -74,11 +75,22 @@ def atualizar_produto(produto_id: int, dados: schemas.ProdutoCreate, db: Session
     if not produto:
         raise HTTPException(status_code=404, detail="Produto não encontrado")
 
+    estoque_anterior = produto.estoque
+    minimo_anterior = produto.minimo
+
     for key, value in dados.model_dump().items():
         setattr(produto, key, value)
 
     db.commit()
     db.refresh(produto)
+
+    if produto.estoque != estoque_anterior or produto.minimo != minimo_anterior:
+        publish_stock_events(
+            produto,
+            previous_stock=estoque_anterior,
+            primary_event_type="stock.updated",
+        )
+
     return produto
 
 
@@ -102,6 +114,9 @@ def adicionar_estoque(produto_id: int, quantidade: int, db: Session = Depends(ge
     if not produto:
         raise HTTPException(status_code=404, detail="Produto não encontrado")
     
+    estoque_anterior = produto.estoque
     produto.estoque += quantidade
     db.commit()
+    db.refresh(produto)
+    publish_stock_events(produto, previous_stock=estoque_anterior)
     return {"mensagem": "Estoque atualizado", "novo_estoque": produto.estoque}

@@ -1,8 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { PageHeader } from "@/components/app-layout";
 import { inventoryService, type Product } from "@/services/inventory.service";
-import { Plus, Trash2 } from "lucide-react";
+import { notificationService, type Subscription } from "@/services/notification.service";
+import { Bell, Plus, Trash2 } from "lucide-react";
 
 export const Route = createFileRoute("/app/inventory")({
   component: InventoryPage,
@@ -11,6 +12,8 @@ export const Route = createFileRoute("/app/inventory")({
 function InventoryPage() {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<Product[]>([]);
+  const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
   const refresh = async () => {
     try {
@@ -21,9 +24,27 @@ function InventoryPage() {
     }
   };
 
+  const loadSubscriptions = async () => {
+    try {
+      const data = await notificationService.listSubscriptions();
+      setSubscriptions(data);
+    } catch (err) {
+      console.error("Erro ao buscar inscrições:", err);
+    }
+  };
+
   useEffect(() => {
     refresh();
+    loadSubscriptions();
   }, []);
+
+  const subscriptionByProductId = useMemo(() => {
+    return new Map(subscriptions.map((subscription) => [subscription.productId, subscription]));
+  }, [subscriptions]);
+
+  const selectedSubscription = selectedProduct
+    ? subscriptionByProductId.get(selectedProduct.id)
+    : undefined;
 
   return (
     <div>
@@ -57,39 +78,68 @@ function InventoryPage() {
                   <th className="text-right px-4 py-2">Estoque</th>
                   <th className="text-right px-4 py-2">Mínimo</th>
                   <th className="w-10"></th>
+                  <th className="w-10"></th>
                 </tr>
               </thead>
 
               <tbody>
-                {items.map((p) => (
-                  <tr key={p.id} className="border-t hover:bg-muted/20">
-                    <td className="px-4 py-2.5 font-medium">{p.name}</td>
-                    <td className="px-4 py-2.5 text-xs font-mono text-muted-foreground">{p.sku}</td>
-                    <td className="px-4 py-2.5 text-muted-foreground">{p.category}</td>
-                    <td className="px-4 py-2.5 text-right">R$ {p.price.toFixed(2)}</td>
-                    <td
-                      className={`px-4 py-2.5 text-right font-medium ${
-                        p.stock <= p.minStock ? "text-destructive" : ""
-                      }`}
-                    >
-                      {p.stock}
-                    </td>
-                    <td className="px-4 py-2.5 text-right text-muted-foreground">{p.minStock}</td>
-                    <td className="px-2 py-2.5 text-right">
-                      <button
-                        onClick={async () => {
-                          if (confirm("Remover produto?")) {
-                            await inventoryService.remove(p.id);
-                            refresh();
-                          }
-                        }}
-                        className="p-1 hover:text-destructive"
+                {items.map((p) => {
+                  const monitored = subscriptionByProductId.has(p.id);
+
+                  return (
+                    <tr key={p.id} className="border-t hover:bg-muted/20">
+                      <td className="px-4 py-2.5 font-medium">{p.name}</td>
+                      <td className="px-4 py-2.5 text-xs font-mono text-muted-foreground">
+                        {p.sku}
+                      </td>
+                      <td className="px-4 py-2.5 text-muted-foreground">{p.category}</td>
+                      <td className="px-4 py-2.5 text-right">R$ {p.price.toFixed(2)}</td>
+                      <td
+                        className={`px-4 py-2.5 text-right font-medium ${
+                          p.stock <= p.minStock ? "text-destructive" : ""
+                        }`}
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                        {p.stock}
+                      </td>
+                      <td className="px-4 py-2.5 text-right text-muted-foreground">{p.minStock}</td>
+                      <td className="px-2 py-2.5 text-center">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedProduct(p)}
+                          className={`p-1 rounded-md transition-colors ${
+                            monitored
+                              ? "text-warning hover:bg-warning/10"
+                              : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                          }`}
+                          title={monitored ? "Notificações ativadas" : "Ativar notificações"}
+                          aria-label={
+                            monitored
+                              ? `Notificações ativadas para ${p.name}`
+                              : `Ativar notificações para ${p.name}`
+                          }
+                        >
+                          <Bell
+                            className="h-3.5 w-3.5"
+                            fill={monitored ? "currentColor" : "none"}
+                          />
+                        </button>
+                      </td>
+                      <td className="px-2 py-2.5 text-right">
+                        <button
+                          onClick={async () => {
+                            if (confirm("Remover produto?")) {
+                              await inventoryService.remove(p.id);
+                              refresh();
+                            }
+                          }}
+                          className="p-1 hover:text-destructive"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -105,6 +155,103 @@ function InventoryPage() {
           }}
         />
       )}
+
+      {selectedProduct && (
+        <ProductNotificationDialog
+          product={selectedProduct}
+          subscription={selectedSubscription}
+          onClose={() => setSelectedProduct(null)}
+          onChanged={loadSubscriptions}
+        />
+      )}
+    </div>
+  );
+}
+
+function ProductNotificationDialog({
+  product,
+  subscription,
+  onClose,
+  onChanged,
+}: {
+  product: Product;
+  subscription?: Subscription;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [err, setErr] = useState("");
+  const monitored = Boolean(subscription);
+
+  const toggleSubscription = async () => {
+    setBusy(true);
+    setErr("");
+    setMessage("");
+
+    try {
+      if (subscription) {
+        await notificationService.deleteSubscription(subscription.id);
+        setMessage("Notificações desativadas para este produto.");
+      } else {
+        await notificationService.createSubscription(product.id);
+        setMessage("Notificações ativadas para este produto.");
+      }
+
+      await onChanged();
+    } catch (e) {
+      const error = e as Error;
+      console.error("Erro ao alterar inscrição:", error);
+      setErr(error.message || "Não foi possível alterar as notificações.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 bg-foreground/20 flex items-center justify-center z-50 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-card rounded-lg border w-full max-w-sm p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start gap-3">
+          <div
+            className={`mt-0.5 h-8 w-8 rounded-md flex items-center justify-center ${
+              monitored ? "bg-warning/15 text-warning" : "bg-muted text-muted-foreground"
+            }`}
+          >
+            <Bell className="h-4 w-4" fill={monitored ? "currentColor" : "none"} />
+          </div>
+          <div>
+            <h2 className="text-base font-semibold">Notificações de estoque</h2>
+            <p className="text-xs text-muted-foreground mt-1">{product.name}</p>
+          </div>
+        </div>
+
+        <p className="text-sm text-muted-foreground mt-4">
+          Ative as notificações para receber avisos quando os produtos estiverem em estado crítico.
+        </p>
+
+        {message && <p className="text-xs text-success mt-3">{message}</p>}
+        {err && <p className="text-xs text-destructive mt-3">{err}</p>}
+
+        <div className="flex justify-end gap-2 pt-5">
+          <button type="button" onClick={onClose} className="btn btn-ghost">
+            Fechar
+          </button>
+          <button
+            type="button"
+            onClick={toggleSubscription}
+            disabled={busy}
+            className={monitored ? "btn btn-outline" : "btn btn-primary"}
+          >
+            {busy ? "Salvando..." : monitored ? "Desativar notificações" : "Ativar notificações"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

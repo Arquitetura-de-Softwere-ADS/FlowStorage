@@ -10,13 +10,15 @@ O FlowStorage é dividido em:
 - **Microserviços** em FastAPI + SQLAlchemy
 - **Bancos isolados por serviço** (PostgreSQL)
 - **Integração via gRPC** entre serviços (Inventário como fonte de verdade do estoque)
+- **Mensageria Pub/Sub** com RabbitMQ para eventos de estoque
 
-Módulos cobertos pela UI:
+Módulos e serviços de negócio:
 
 - **Autenticação** (cadastro/login + JWT)
 - **Inventário** (CRUD de produtos)
 - **Pedidos de reposição** (cria pedido e, ao receber, aumenta estoque via gRPC)
 - **Vendas** (registra venda e baixa estoque via gRPC)
+- **Notificações** (assina eventos de estoque e cria notificações para usuários inscritos)
 - **Relatórios**: rotas/serviço removidos (mantido vazio para compatibilidade no frontend)
 
 ## Arquitetura (alto nível)
@@ -36,7 +38,14 @@ Módulos cobertos pela UI:
 │              │ ── HTTP ─▶ ┌─────────────────────────────┐
 │              │            │ Replacement Service (8004)   │ ── Postgres (5436)
 │              │            │  └─ gRPC → Inventory         │
-└──────────────┘            └─────────────────────────────┘
+│              │            └─────────────────────────────┘
+│              │ ── HTTP ─▶ ┌─────────────────────────────┐
+│              │            │ Notification Service (8005)  │ ── Postgres (5437)
+│              │            │  └─ consome RabbitMQ         │
+│              │            └─────────────────────────────┘
+└──────────────┘
+
+Inventory Service ── publica eventos stock.* ──▶ RabbitMQ ──▶ Notification Service
 ```
 
 ## Stack
@@ -56,6 +65,7 @@ Módulos cobertos pela UI:
 - SQLAlchemy
 - PostgreSQL (via Docker)
 - gRPC (InventoryService)
+- RabbitMQ (exchange topic para publish/subscribe)
 
 ## Serviços e portas
 
@@ -65,6 +75,8 @@ Módulos cobertos pela UI:
 - **Sales Service**: `http://localhost:8002`
 - **Inventory Service**: `http://localhost:8003`
 - **Replacement Service**: `http://localhost:8004`
+- **Notification Service**: `http://localhost:8005`
+- **RabbitMQ Management**: `http://localhost:15672` (usuário `guest`, senha `guest`)
 
 ### gRPC
 
@@ -76,6 +88,7 @@ Módulos cobertos pela UI:
 - **Sales DB**: `localhost:5434` (db `sales_db`, user `sales_user`)
 - **Inventory DB**: `localhost:5435` (db `inventory_db`, user `inventory_user`)
 - **Replacement DB**: `localhost:5436` (db `replacement_db`, user `replacement_user`)
+- **Notification DB**: `localhost:5437` (db `notification_db`, user `notification_user`)
 
 Observação importante: hoje as URLs de conexão do banco estão hard-coded nos serviços (apontando para os hosts do Docker, como `auth-db`, `inventory-db`, etc.).
 
@@ -91,8 +104,9 @@ docker compose up --build
 
 Isso sobe:
 
-- 4 bancos Postgres (um por microserviço)
-- 4 microserviços FastAPI
+- RabbitMQ com painel web de gerenciamento
+- 5 bancos Postgres (um por microserviço)
+- 5 microserviços FastAPI
 - gRPC do inventário na porta 50051 (no mesmo container do inventário)
 
 Para parar:
@@ -135,6 +149,7 @@ Cada serviço FastAPI expõe documentação OpenAPI por padrão:
 - `http://localhost:8002/docs`
 - `http://localhost:8003/docs`
 - `http://localhost:8004/docs`
+- `http://localhost:8005/docs`
 
 ## APIs (endpoints principais)
 
@@ -212,6 +227,122 @@ Body para criar:
 }
 ```
 
+### Notification Service (8005)
+
+O `notification-service` é o assinante de eventos de estoque. Ele permite que um usuário monitore produtos específicos e salva notificações quando o RabbitMQ entrega eventos relacionados a esses produtos.
+
+- `POST /subscriptions` → cadastra inscrição de usuário em produto
+- `GET /subscriptions/{user_id}` → lista produtos monitorados por usuário
+- `DELETE /subscriptions/{subscription_id}` → remove inscrição
+- `GET /notifications/{user_id}` → lista notificações do usuário
+- `PATCH /notifications/{notification_id}/read` → marca notificação como lida
+
+Body para criar inscrição:
+
+```json
+{
+	"user_id": 1,
+	"product_id": 3
+}
+```
+
+Exemplo de notificação salva:
+
+```json
+{
+	"id": 1,
+	"user_id": 1,
+	"product_id": 3,
+	"title": "Estoque baixo",
+	"message": "O produto Teclado Mecânico está com estoque baixo. Quantidade atual: 2. Mínimo recomendado: 5.",
+	"event_type": "stock.low",
+	"read": false,
+	"created_at": "2026-06-16T10:00:00"
+}
+```
+
+## Mensageria Pub/Sub com RabbitMQ
+
+O projeto usa RabbitMQ para demonstrar uma arquitetura baseada em mensagens com publish/subscribe.
+
+- **Publicador**: `inventory-service`
+- **Broker/canal intermediário**: RabbitMQ
+- **Assinante**: `notification-service`
+- **Exchange**: `flowstorage.events`
+- **Tipo da exchange**: `topic`
+- **Eventos consumidos pelo notification-service**: `stock.updated` e `stock.low`
+
+Quando o estoque é alterado pelo endpoint HTTP do inventário ou pelos fluxos gRPC de venda/reposição, o `inventory-service` publica:
+
+```json
+{
+	"event": "stock.low",
+	"product_id": 3,
+	"product_name": "Teclado Mecânico",
+	"current_stock": 2,
+	"minimum_stock": 5
+}
+```
+
+O `notification-service` mantém uma fila própria ligada às routing keys `stock.updated` e `stock.low`. Ao receber um evento, ele lê o `product_id`, busca os usuários inscritos em `subscriptions` e cria uma linha em `notifications` para cada usuário encontrado.
+
+Logs esperados no `notification-service`:
+
+```text
+[notification-service] Conectado ao RabbitMQ
+[notification-service] Aguardando eventos de estoque
+[notification-service] Evento recebido: stock.low
+[notification-service] Produto monitorado encontrado: produto 3, 1 inscrição(ões)
+[notification-service] Notificação criada para o usuário 1
+```
+
+### Teste do fluxo de notificações
+
+Passo 1: subir o projeto.
+
+```bash
+docker compose up --build
+```
+
+Passo 2: cadastrar uma inscrição para monitorar o produto 3.
+
+```bash
+curl -X POST http://localhost:8005/subscriptions \
+	-H "Content-Type: application/json" \
+	-d '{"user_id":1,"product_id":3}'
+```
+
+Passo 3: alterar o estoque do produto 3 para gerar `stock.updated` e, se ficar abaixo do mínimo, `stock.low`.
+
+```bash
+curl -X PUT http://localhost:8003/produtos/3 \
+	-H "Content-Type: application/json" \
+	-d '{
+		"nome":"Teclado Mecânico",
+		"sku":"TEC-003",
+		"categoria":"Eletrônicos",
+		"preco":250.0,
+		"estoque":2,
+		"minimo":5
+	}'
+```
+
+Se o produto 3 ainda não existir no banco, crie um produto em `POST /produtos/` e use o `id` retornado no lugar do `3`.
+
+Passo 4: verificar os logs do assinante.
+
+```bash
+docker compose logs -f notification-service
+```
+
+Passo 5: consultar as notificações do usuário 1.
+
+```bash
+curl http://localhost:8005/notifications/1
+```
+
+Resultado esperado: a resposta deve conter uma notificação relacionada ao produto monitorado.
+
 ## gRPC (InventoryService)
 
 O contrato está em:
@@ -256,6 +387,7 @@ Repita o mesmo comando em `services/sales-service` e `services/replacement-servi
 └─ services/
 	 ├─ auth-service/
 	 ├─ inventory-service/
+	 ├─ notification-service/
 	 ├─ replacement-service/
 	 └─ sales-service/
 ```
