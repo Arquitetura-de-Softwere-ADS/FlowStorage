@@ -250,7 +250,7 @@ Sugestão direta para a apresentação:
 
 6. **Arquitetura no FlowStorage**
    - Mostrar `sales-service`, `inventory-service`, `replacement-service`, `notification-service` e `RabbitMQ`.
-
+   
 7. **Eventos**
    - `sales.created`
    - `stock.updated`
