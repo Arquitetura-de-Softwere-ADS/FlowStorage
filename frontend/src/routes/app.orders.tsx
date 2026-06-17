@@ -15,6 +15,10 @@ const statusLabel: Record<RestockOrder["status"], string> = {
   Cancelado: "Cancelado",
 };
 
+function getOriginLabel(origin: string | undefined) {
+  return origin === "AUTOMATIC" ? "Automático" : "Manual";
+}
+
 function OrdersPage() {
   const [items, setItems] = useState<RestockOrder[]>([]);
   const [open, setOpen] = useState(false);
@@ -54,6 +58,7 @@ function OrdersPage() {
                   <th className="text-left px-4 py-2">Fornecedor</th>
                   <th className="text-right px-4 py-2">Quantidade</th>
                   <th className="text-left px-4 py-2">Data</th>
+                  <th className="text-left px-4 py-2">Origem</th>
                   <th className="text-left px-4 py-2">Status</th>
                   <th className="text-right px-4 py-2">Ações</th>
                 </tr>
@@ -70,6 +75,12 @@ function OrdersPage() {
 
                     <td className="px-4 py-2.5 text-muted-foreground text-xs">
                       {new Date(o.data).toLocaleDateString("pt-BR")}
+                    </td>
+
+                    <td className="px-4 py-2.5">
+                      <span className="text-xs px-2 py-0.5 rounded-full border border-border bg-muted text-muted-foreground">
+                        {getOriginLabel(o.origin)}
+                      </span>
                     </td>
 
                     <td className="px-4 py-2.5">

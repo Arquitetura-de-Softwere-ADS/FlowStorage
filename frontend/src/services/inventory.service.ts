@@ -8,9 +8,10 @@ export interface Product {
   price: number;
   stock: number;
   minStock: number;
+  supplier: string | null;
+  autoReorderEnabled: boolean;
 }
 
-// 👉 tipo da API (IMPORTANTE)
 interface ProductAPI {
   id: number;
   nome: string;
@@ -19,6 +20,36 @@ interface ProductAPI {
   preco: number;
   estoque: number;
   minimo: number;
+  fornecedor: string | null;
+  auto_reorder_enabled: boolean;
+}
+
+interface AutoReorderAPI {
+  product_id: number;
+  auto_reorder_enabled: boolean;
+}
+
+async function getErrorMessage(res: Response, fallback: string) {
+  try {
+    const data = await res.json();
+    return data.detail || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function mapProduct(p: ProductAPI): Product {
+  return {
+    id: p.id,
+    name: p.nome,
+    sku: p.sku,
+    category: p.categoria,
+    price: p.preco,
+    stock: p.estoque,
+    minStock: p.minimo,
+    supplier: p.fornecedor ?? null,
+    autoReorderEnabled: Boolean(p.auto_reorder_enabled),
+  };
 }
 
 export const inventoryService = {
@@ -28,15 +59,7 @@ export const inventoryService = {
 
     const data: ProductAPI[] = await res.json();
 
-    return data.map((p) => ({
-      id: p.id,
-      name: p.nome,
-      sku: p.sku,
-      category: p.categoria,
-      price: p.preco,
-      stock: p.estoque,
-      minStock: p.minimo,
-    }));
+    return data.map(mapProduct);
   },
 
   async get(id: number): Promise<Product> {
@@ -45,18 +68,12 @@ export const inventoryService = {
 
     const p: ProductAPI = await res.json();
 
-    return {
-      id: p.id,
-      name: p.nome,
-      sku: p.sku,
-      category: p.categoria,
-      price: p.preco,
-      stock: p.estoque,
-      minStock: p.minimo,
-    };
+    return mapProduct(p);
   },
 
-  async create(data: Omit<Product, "id">): Promise<Product> {
+  async create(
+    data: Omit<Product, "id" | "autoReorderEnabled"> & { autoReorderEnabled?: boolean },
+  ): Promise<Product> {
     const res = await fetch(`${API_URL}/produtos/`, {
       method: "POST",
       headers: {
@@ -69,22 +86,15 @@ export const inventoryService = {
         preco: data.price,
         estoque: data.stock,
         minimo: data.minStock,
+        fornecedor: data.supplier || null,
       }),
     });
 
-    if (!res.ok) throw new Error("Erro ao criar produto");
+    if (!res.ok) throw new Error(await getErrorMessage(res, "Erro ao criar produto"));
 
     const p: ProductAPI = await res.json();
 
-    return {
-      id: p.id,
-      name: p.nome,
-      sku: p.sku,
-      category: p.categoria,
-      price: p.preco,
-      stock: p.estoque,
-      minStock: p.minimo,
-    };
+    return mapProduct(p);
   },
 
   async update(id: number, patch: Partial<Product>): Promise<Product> {
@@ -100,22 +110,15 @@ export const inventoryService = {
         preco: patch.price,
         estoque: patch.stock,
         minimo: patch.minStock,
+        fornecedor: patch.supplier || null,
       }),
     });
 
-    if (!res.ok) throw new Error("Erro ao atualizar produto");
+    if (!res.ok) throw new Error(await getErrorMessage(res, "Erro ao atualizar produto"));
 
     const p: ProductAPI = await res.json();
 
-    return {
-      id: p.id,
-      name: p.nome,
-      sku: p.sku,
-      category: p.categoria,
-      price: p.preco,
-      stock: p.estoque,
-      minStock: p.minimo,
-    };
+    return mapProduct(p);
   },
 
   async remove(id: number): Promise<void> {
@@ -124,5 +127,23 @@ export const inventoryService = {
     });
 
     if (!res.ok) throw new Error("Erro ao remover produto");
+  },
+
+  async setAutoReorder(id: number, enabled: boolean): Promise<AutoReorderAPI> {
+    const res = await fetch(`${API_URL}/produtos/${id}/auto-reorder`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ enabled }),
+    });
+
+    if (!res.ok) {
+      throw new Error(
+        await getErrorMessage(res, "Erro ao atualizar reposição automática"),
+      );
+    }
+
+    return res.json();
   },
 };

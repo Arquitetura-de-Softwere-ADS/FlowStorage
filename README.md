@@ -19,6 +19,7 @@ Módulos e serviços de negócio:
 - **Pedidos de reposição** (cria pedido e, ao receber, aumenta estoque via gRPC)
 - **Vendas** (registra venda e baixa estoque via gRPC)
 - **Notificações** (assina eventos de estoque e cria notificações para usuários inscritos)
+- **Reposição automática** (assina `stock.low` e cria pedidos sem duplicar quando habilitada no produto)
 - **Relatórios**: rotas/serviço removidos (mantido vazio para compatibilidade no frontend)
 
 ## Arquitetura (alto nível)
@@ -46,6 +47,7 @@ Módulos e serviços de negócio:
 └──────────────┘
 
 Inventory Service ── publica eventos stock.* ──▶ RabbitMQ ──▶ Notification Service
+                                                  └──────────▶ Replacement Service
 ```
 
 ## Stack
@@ -177,6 +179,7 @@ curl -X POST http://localhost:8001/auth/register \
 - `GET /produtos/` → lista
 - `GET /produtos/{produto_id}` → detalhe
 - `PUT /produtos/{produto_id}` → atualiza
+- `PATCH /produtos/{produto_id}/auto-reorder` → ativa/desativa reposição automática
 - `DELETE /produtos/{produto_id}` → remove
 - `PATCH /produtos/{produto_id}/adicionar-estoque/{quantidade}` → adiciona estoque (HTTP)
 
@@ -189,7 +192,36 @@ Campos do produto (API):
 	"categoria": "Eletrônicos",
 	"preco": 79.9,
 	"estoque": 10,
-	"minimo": 5
+	"minimo": 5,
+	"fornecedor": "Fornecedor X"
+}
+```
+
+Resposta do produto também inclui:
+
+```json
+{
+	"id": 1,
+	"auto_reorder_enabled": false
+}
+```
+
+Produtos existentes começam com `auto_reorder_enabled = false`. A coluna é salva no banco do inventário e não usa `localStorage`.
+
+Body para ativar/desativar a reposição automática:
+
+```json
+{
+	"enabled": true
+}
+```
+
+Resposta:
+
+```json
+{
+	"product_id": 1,
+	"auto_reorder_enabled": true
 }
 ```
 
@@ -226,6 +258,8 @@ Body para criar:
 	"quantidade": 10
 }
 ```
+
+Pedidos criados pela tela/API manual recebem `origin = "MANUAL"`. Pedidos criados pelo consumer de estoque crítico recebem `origin = "AUTOMATIC"` e aparecem na tela como “Automático”.
 
 ### Notification Service (8005)
 
@@ -267,24 +301,64 @@ O projeto usa RabbitMQ para demonstrar uma arquitetura baseada em mensagens com 
 
 - **Publicador**: `inventory-service`
 - **Broker/canal intermediário**: RabbitMQ
-- **Assinante**: `notification-service`
+- **Assinantes**: `notification-service` e `replacement-service`
 - **Exchange**: `flowstorage.events`
 - **Tipo da exchange**: `topic`
 - **Eventos consumidos pelo notification-service**: `stock.updated` e `stock.low`
+- **Evento consumido pelo replacement-service**: `stock.low`
+- **Fila de notificações**: `notification-service.stock`
+- **Fila de reposição automática**: `replacement-service.stock-low`
 
 Quando o estoque é alterado pelo endpoint HTTP do inventário ou pelos fluxos gRPC de venda/reposição, o `inventory-service` publica:
 
 ```json
 {
+	"event_id": "uuid-unico",
 	"event": "stock.low",
 	"product_id": 3,
 	"product_name": "Teclado Mecânico",
+	"previous_quantity": 8,
+	"previous_stock": 8,
+	"current_quantity": 2,
 	"current_stock": 2,
-	"minimum_stock": 5
+	"minimum_stock": 5,
+	"auto_reorder_enabled": true,
+	"fornecedor": "Fornecedor X",
+	"supplier": "Fornecedor X",
+	"created_at": "2026-06-16T10:00:00"
 }
 ```
 
-O `notification-service` mantém uma fila própria ligada às routing keys `stock.updated` e `stock.low`. Ao receber um evento, ele lê o `product_id`, busca os usuários inscritos em `subscriptions` e cria uma linha em `notifications` para cada usuário encontrado.
+O `stock.low` é publicado preferencialmente quando o produto entra no estado crítico, ou seja, quando sai de uma situação acima do mínimo e passa para `estoque <= minimo`. Se o produto já estava crítico e cai de 4 para 3, o inventário evita republicar a entrada crítica. Mesmo assim, o replacement-service também se protege contra eventos repetidos.
+
+O `notification-service` mantém uma fila própria ligada às routing keys configuradas no compose. Ao receber `stock.low`, ele cria notificação crítica mesmo que o sino daquele produto esteja desativado.
+
+O `replacement-service` mantém a fila `replacement-service.stock-low`, ligada somente à routing key `stock.low`. Ao receber o evento, ele:
+
+- lê `product_id` e `auto_reorder_enabled`;
+- ignora o evento se `auto_reorder_enabled` for `false`;
+- usa `event_id` para evitar reprocessamento;
+- usa uma trava transacional por produto antes de checar/criar pedidos;
+- verifica se já existe pedido `Pendente` para o mesmo produto;
+- calcula `quantidade = max(minimum_stock - current_quantity, 1)`;
+- cria o pedido como `origin = "AUTOMATIC"` quando existe fornecedor válido.
+
+Fluxo esperado:
+
+```text
+inventory-service
+        |
+        | publica stock.low
+        v
+flowstorage.events
+        |
+        |------------------------------|
+        v                              v
+notification-service.stock     replacement-service.stock-low
+        |                              |
+        v                              v
+cria notificação                cria pedido automático
+```
 
 Logs esperados no `notification-service`:
 
@@ -294,6 +368,14 @@ Logs esperados no `notification-service`:
 [notification-service] Evento recebido: stock.low
 [notification-service] Produto monitorado encontrado: produto 3, 1 inscrição(ões)
 [notification-service] Notificação criada para o usuário 1
+```
+
+Logs esperados no `replacement-service`:
+
+```text
+[replacement-service] Evento stock.low recebido para o produto 3
+[replacement-service] Reposição automática ativada
+[replacement-service] Pedido automático criado com quantidade 5
 ```
 
 ### Teste do fluxo de notificações
@@ -342,6 +424,132 @@ curl http://localhost:8005/notifications/1
 ```
 
 Resultado esperado: a resposta deve conter uma notificação relacionada ao produto monitorado.
+
+## Reposição automática de estoque
+
+Na tela **Inventário**, cada produto tem dois controles independentes:
+
+- **Sino**: controla notificações comuns/monitoramento do produto.
+- **Checkbox de reposição automática**: controla se o sistema pode criar pedido automático quando o produto entra em estoque crítico.
+
+Notificações críticas continuam sendo criadas mesmo com sino e checkbox desativados. O checkbox desmarcado significa apenas: não gerar novos pedidos automáticos para aquele produto.
+
+Regra de estoque crítico:
+
+```text
+estoque <= minimo
+```
+
+Quando o checkbox é marcado, o frontend atualiza a interface imediatamente e envia:
+
+```bash
+curl -X PATCH http://localhost:8003/produtos/1/auto-reorder \
+	-H "Content-Type: application/json" \
+	-d '{"enabled":true}'
+```
+
+Se a API falhar, a tela volta o checkbox para o valor anterior e exibe uma mensagem simples. Enquanto a requisição estiver em andamento, o checkbox fica desabilitado.
+
+Quando `enabled = true` e o produto já estiver crítico no momento da ativação, o inventário publica um `stock.low` imediatamente para o replacement-service tentar criar o pedido automático.
+
+### Fornecedor usado pelo pedido automático
+
+O sistema não usa fornecedor fixo no código. A reposição automática tenta resolver o fornecedor nesta ordem:
+
+1. `fornecedor` salvo no produto e enviado pelo evento `stock.low`.
+2. fornecedor do pedido mais recente já existente para o mesmo produto.
+
+Se nenhum fornecedor válido existir, o evento é processado com segurança, mas o pedido automático não é criado. Nesse caso, configure o fornecedor do produto pela criação/API do inventário ou crie um primeiro pedido manual com fornecedor para aquele produto.
+
+### Teste no navegador
+
+1. Suba backend e frontend.
+2. Acesse `http://localhost:5173/app/inventory`.
+3. Crie um produto com estoque acima do mínimo e informe o fornecedor.
+4. Ative/desative o checkbox ao lado do sino e confirme que ele não recarrega a página.
+5. Faça uma venda ou atualize o estoque para ficar `estoque <= minimo`.
+6. Acesse `Pedidos de reposição` e veja o pedido marcado como “Automático”.
+
+### Teste no Insomnia/curl
+
+Cenário com checkbox desmarcado:
+
+```bash
+curl -X POST http://localhost:8003/produtos/ \
+	-H "Content-Type: application/json" \
+	-d '{"nome":"Mouse","sku":"MOU-AUTO-1","categoria":"Eletrônicos","preco":79.9,"estoque":10,"minimo":5,"fornecedor":"Fornecedor X"}'
+
+curl -X PUT http://localhost:8003/produtos/1 \
+	-H "Content-Type: application/json" \
+	-d '{"nome":"Mouse","sku":"MOU-AUTO-1","categoria":"Eletrônicos","preco":79.9,"estoque":4,"minimo":5,"fornecedor":"Fornecedor X"}'
+```
+
+Resultado esperado: cria notificação crítica, mas não cria pedido automático.
+
+Cenário com checkbox marcado:
+
+```bash
+curl -X PATCH http://localhost:8003/produtos/1/auto-reorder \
+	-H "Content-Type: application/json" \
+	-d '{"enabled":true}'
+
+curl -X PUT http://localhost:8003/produtos/1 \
+	-H "Content-Type: application/json" \
+	-d '{"nome":"Mouse","sku":"MOU-AUTO-1","categoria":"Eletrônicos","preco":79.9,"estoque":4,"minimo":5,"fornecedor":"Fornecedor X"}'
+```
+
+Resultado esperado: cria notificação crítica e um pedido automático de `max(5 - 4, 1) = 1` unidade.
+
+Cenário de ativação enquanto já está crítico:
+
+```bash
+curl -X PUT http://localhost:8003/produtos/1 \
+	-H "Content-Type: application/json" \
+	-d '{"nome":"Mouse","sku":"MOU-AUTO-1","categoria":"Eletrônicos","preco":79.9,"estoque":2,"minimo":5,"fornecedor":"Fornecedor X"}'
+
+curl -X PATCH http://localhost:8003/produtos/1/auto-reorder \
+	-H "Content-Type: application/json" \
+	-d '{"enabled":true}'
+```
+
+Resultado esperado: cria um único pedido automático de `max(5 - 2, 1) = 3` unidades, desde que não exista pedido pendente para o produto.
+
+Para consultar pedidos:
+
+```bash
+curl http://localhost:8004/pedidos/
+```
+
+### Verificação no banco
+
+Inventory DB:
+
+```sql
+SELECT id, nome, estoque, minimo, fornecedor, auto_reorder_enabled
+FROM produtos
+ORDER BY id;
+```
+
+Replacement DB:
+
+```sql
+SELECT id, produto_id, quantidade, fornecedor, status, origin, source_event_id
+FROM pedidos
+ORDER BY id;
+
+SELECT event_id, event_type, created_at
+FROM processed_events
+ORDER BY created_at DESC;
+```
+
+### Cenários obrigatórios
+
+- Checkbox desmarcado: `stock.low` gera notificação crítica e o replacement-service registra que a reposição automática está desativada.
+- Checkbox marcado: `stock.low` cria pedido automático se houver fornecedor e nenhum pedido pendente.
+- Duplicidade: `event_id`, trava por produto e checagem de pedido `Pendente` impedem dois pedidos abertos para o mesmo produto.
+- Produto já crítico: marcar o checkbox publica `stock.low` para criar o pedido automático imediatamente.
+- Desativação: desmarcar salva `auto_reorder_enabled = false`, não cancela pedidos existentes e não bloqueia pedidos manuais.
+- Pedido recebido: o fluxo atual de recebimento continua aumentando estoque via gRPC e publicando `replacement.received`.
 
 ## gRPC (InventoryService)
 
@@ -395,7 +603,7 @@ Repita o mesmo comando em `services/sales-service` e `services/replacement-servi
 ## Notas técnicas (importantes)
 
 - **CORS está liberado** (`allow_origins=["*"]`) nos serviços (bom para dev; restringir em produção).
-- **Tabelas são criadas automaticamente** no startup via `metadata.create_all` (não há migrações).
+- **Tabelas são criadas automaticamente** no startup via `metadata.create_all`. As colunas novas usadas pela reposição automática são adicionadas com `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, sem apagar dados existentes.
 - **JWT do Auth** usa `SECRET_KEY = "troque-essa-chave-depois"` (placeholder). Para qualquer uso real, troque e mova para variável de ambiente.
 - **URLs do Postgres e senhas** também estão no código/compose como valores fixos (apenas dev).
 - **Outros serviços não validam JWT** hoje; a UI usa login apenas para experiência do app.

@@ -14,6 +14,8 @@ function InventoryPage() {
   const [items, setItems] = useState<Product[]>([]);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [autoReorderSavingIds, setAutoReorderSavingIds] = useState<Set<number>>(new Set());
+  const [autoReorderError, setAutoReorderError] = useState("");
 
   const refresh = async () => {
     try {
@@ -46,6 +48,59 @@ function InventoryPage() {
     ? subscriptionByProductId.get(selectedProduct.id)
     : undefined;
 
+  const setAutoReorderSaving = (productId: number, saving: boolean) => {
+    setAutoReorderSavingIds((current) => {
+      const next = new Set(current);
+
+      if (saving) {
+        next.add(productId);
+      } else {
+        next.delete(productId);
+      }
+
+      return next;
+    });
+  };
+
+  const toggleAutoReorder = async (product: Product, enabled: boolean) => {
+    if (autoReorderSavingIds.has(product.id)) return;
+
+    const previousValue = product.autoReorderEnabled;
+    setAutoReorderError("");
+    setAutoReorderSaving(product.id, true);
+    setItems((current) =>
+      current.map((item) =>
+        item.id === product.id ? { ...item, autoReorderEnabled: enabled } : item,
+      ),
+    );
+
+    try {
+      const updated = await inventoryService.setAutoReorder(product.id, enabled);
+      setItems((current) =>
+        current.map((item) =>
+          item.id === product.id
+            ? { ...item, autoReorderEnabled: updated.auto_reorder_enabled }
+            : item,
+        ),
+      );
+    } catch (e) {
+      const error = e as Error;
+      console.error("Erro ao alterar reposição automática:", error);
+      setItems((current) =>
+        current.map((item) =>
+          item.id === product.id
+            ? { ...item, autoReorderEnabled: previousValue }
+            : item,
+        ),
+      );
+      setAutoReorderError(
+        error.message || "Não foi possível alterar a reposição automática.",
+      );
+    } finally {
+      setAutoReorderSaving(product.id, false);
+    }
+  };
+
   return (
     <div>
       <PageHeader
@@ -59,6 +114,10 @@ function InventoryPage() {
       />
 
       <div className="p-8">
+        {autoReorderError && (
+          <p className="mb-3 text-xs text-destructive">{autoReorderError}</p>
+        )}
+
         {items.length === 0 ? (
           <div className="border border-dashed border-border rounded-lg p-12 text-center">
             <p className="text-sm text-muted-foreground">Nenhum produto cadastrado.</p>
@@ -78,6 +137,7 @@ function InventoryPage() {
                   <th className="text-right px-4 py-2">Estoque</th>
                   <th className="text-right px-4 py-2">Mínimo</th>
                   <th className="w-10"></th>
+                  <th className="w-12"></th>
                   <th className="w-10"></th>
                 </tr>
               </thead>
@@ -123,6 +183,25 @@ function InventoryPage() {
                             fill={monitored ? "currentColor" : "none"}
                           />
                         </button>
+                      </td>
+                      <td className="px-2 py-2.5 text-center">
+                        <input
+                          type="checkbox"
+                          checked={p.autoReorderEnabled}
+                          disabled={autoReorderSavingIds.has(p.id)}
+                          onChange={(e) => toggleAutoReorder(p, e.target.checked)}
+                          className="h-4 w-4 rounded border-border accent-primary disabled:cursor-not-allowed disabled:opacity-60"
+                          title={
+                            p.autoReorderEnabled
+                              ? "Reposição automática ativada"
+                              : "Reposição automática desativada"
+                          }
+                          aria-label={
+                            p.autoReorderEnabled
+                              ? `Reposição automática ativada para ${p.name}`
+                              : `Reposição automática desativada para ${p.name}`
+                          }
+                        />
                       </td>
                       <td className="px-2 py-2.5 text-right">
                         <button
@@ -261,6 +340,7 @@ function NewProductDialog({ onClose, onSaved }: { onClose: () => void; onSaved: 
     name: "",
     sku: "",
     category: "",
+    supplier: "",
     price: "",
     stock: "",
     minStock: "",
@@ -277,6 +357,7 @@ function NewProductDialog({ onClose, onSaved }: { onClose: () => void; onSaved: 
         name: form.name,
         sku: form.sku,
         category: form.category || "Geral",
+        supplier: form.supplier.trim() || null,
         price: parseFloat(form.price) || 0,
         stock: parseInt(form.stock) || 0,
         minStock: parseInt(form.minStock) || 0,
@@ -307,6 +388,14 @@ function NewProductDialog({ onClose, onSaved }: { onClose: () => void; onSaved: 
               className="input"
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
+            />
+          </Row>
+
+          <Row label="Fornecedor">
+            <input
+              className="input"
+              value={form.supplier}
+              onChange={(e) => setForm({ ...form, supplier: e.target.value })}
             />
           </Row>
 
