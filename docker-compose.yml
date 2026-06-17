@@ -149,6 +149,7 @@ services:
       RABBITMQ_EXCHANGE: flowstorage.events
       RABBITMQ_QUEUE: replacement-service.stock-low
       RABBITMQ_ROUTING_KEYS: stock.low
+      AUTOMATIC_REORDER_FALLBACK_SUPPLIER: Fornecedor pendente
     volumes:
       - ./services/replacement-service/app:/app/app
     depends_on:

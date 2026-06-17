@@ -117,7 +117,13 @@ def publish_stock_events(
         ),
     )
 
-    if entered_critical_stock(produto, previous_stock, previous_minimum_stock):
+    if should_publish_stock_low(produto, previous_stock, previous_minimum_stock):
+        log(
+            f"Produto {produto.id} entrou em estoque crítico: "
+            f"anterior={previous_stock}, atual={produto.estoque}, "
+            f"mínimo={produto.minimo}, "
+            f"auto_reorder_enabled={bool(getattr(produto, 'auto_reorder_enabled', False))}"
+        )
         publish_stock_low_event(produto, previous_stock, previous_minimum_stock)
 
 
@@ -137,6 +143,24 @@ def entered_critical_stock(
         minimum_before = produto.minimo
 
     return previous_stock > minimum_before
+
+
+def should_publish_stock_low(
+    produto,
+    previous_stock: int | None = None,
+    previous_minimum_stock: int | None = None,
+) -> bool:
+    if produto.estoque > produto.minimo:
+        return False
+
+    if entered_critical_stock(produto, previous_stock, previous_minimum_stock):
+        return True
+
+    return (
+        bool(getattr(produto, "auto_reorder_enabled", False))
+        and previous_stock is not None
+        and produto.estoque < previous_stock
+    )
 
 
 def publish_stock_low_event(
