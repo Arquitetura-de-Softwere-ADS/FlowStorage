@@ -2,10 +2,14 @@ from concurrent import futures
 
 import grpc
 
-from app.database import SessionLocal
+from app.database import Base, SessionLocal, engine, ensure_schema
 from app.grpc.generated import inventory_pb2, inventory_pb2_grpc
 from app.messaging import publish_stock_events
 from app.models import Produto
+
+
+Base.metadata.create_all(bind=engine)
+ensure_schema()
 
 
 class InventoryService(inventory_pb2_grpc.InventoryServiceServicer):

@@ -12,6 +12,7 @@ export interface RestockOrder {
   fornecedor: string;
   status: OrderStatus;
   data: string;
+  origin: string;
 }
 
 export const ordersService = {
